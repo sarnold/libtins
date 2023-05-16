@@ -1,0 +1,77 @@
+name: Debian packages
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-debs:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [
+          x64_buster,
+          x64_bullseye,
+          x64_bookworm
+        ]
+
+        include:
+          - name: x64_buster
+            dist: oldstable
+
+          - name: x64_bullseye
+            dist: stable
+
+          - name: x64_bookworm
+            dist: testing
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Fetch debian files
+        run: |
+          wget http://deb.debian.org/debian/pool/main/libt/libtins/libtins_4.0-1.debian.tar.xz
+          tar xf libtins_4*.tar.xz && rm *debian.tar.xz
+
+      - name: Install devscripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install devscripts
+
+      - name: Update debian changelog
+        run: |
+          ver=$(git describe --tags | sed -e "s|v||" | cut -d- -f1)
+          rev=$(git describe --tags | sed -e "s|v||" | cut -d- -f2)
+          civer="$ver-1+b$rev"
+          sed -i -e "s|libtins4.0|libtins$ver|g" debian/control
+          sed -i -e "s|lib/|lib/*/|g" debian/libtins4.0.install debian/libtins-dev.install
+          debchange -v "${civer}-${{ matrix.dist }}" -b -M --distribution ${{ matrix.dist }} "ci build"
+          tar czf libtins_${civer}.debian.tar.gz debian/
+
+      - name: Build deb packages
+        uses: jtdor/build-deb-action@v1
+        env:
+          DEB_BUILD_OPTIONS: noautodbgsym
+        with:
+          docker-image: "debian:${{ matrix.dist }}-slim"
+          buildpackage-opts: --build=binary --no-sign
+          extra-build-deps: git cmake
+
+      - name: Upload deb files
+        uses: actions/upload-artifact@v3
+        with:
+          name: "deb-packages"
+          path: |
+            ./debian/artifacts/
+            *debian.tar.gz
