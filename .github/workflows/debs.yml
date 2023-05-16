@@ -42,21 +42,21 @@ jobs:
           tar xf libtins_4.2*.tar.xz && rm *debian.tar.xz
           ls
 
-      - name: Update debian changelog
-        run: |
-          sudo apt-get update
-          sudo apt-get install devscripts
-          debchange -v "`git describe --tags | sed -e "s|v||"`-${{ matrix.dist }}" -b -M --distribution ${{ matrix.dist }} "ci build"
-
       - name: Build deb packages
         uses: jtdor/build-deb-action@v1
         env:
           DEB_BUILD_OPTIONS: noautodbgsym
         with:
-          apt-opts: --install-recommends
+          before-build-hook: |
+            ver=$(git describe --tags | sed -e "s|v||" | cut -d- -f1)
+            rev=$(git describe --tags | sed -e "s|v||" | cut -d- -f2)
+            hash=$(git rev-parse HEAD)
+            sed -i -e "s|libtins4.2|libtins$ver|g" debian/control
+            dch --maintmaint --newversion "$ver-1buildci$rev" "Version $ver-1buildci$rev"
+            dch --maintmaint --release ""
           docker-image: "debian:${{ matrix.dist }}-slim"
           buildpackage-opts: --build=binary --no-sign
-          extra-build-deps: git cmake
+          extra-build-deps: devscripts git cmake
 
       - name: Upload deb files
         uses: actions/upload-artifact@v3
